@@ -2,10 +2,10 @@
 #include <fstream>
 #include <stdint.h>
 #include "KVDB.h"
+#define MAX_SIZE 10000
 using namespace kvdb;
 using namespace std;
 
-char tmp[100000];
 
 KVDBHandler::KVDBHandler(const std::string& db_file)
 {
@@ -41,12 +41,12 @@ fstream& KVDBHandler::get_db_file()
 
 int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& value)
 {
-	if (key.length() == 0)
+	if (key.length() == 0 || key.length() > MAX_SIZE)
 		return KVDB_INVALID_KEY;
-
+	
 	fstream &f = handler->get_db_file();
 	f.seekg(0, ios::end);	//locate the pointer to the end of file
-
+	
 	//set data messages
 	uint32_t key_length = key.length();
 	uint32_t value_length = value.length();
@@ -63,52 +63,52 @@ int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& v
 
 int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
 {
-	if (key.length() == 0)
+	if (key.length() == 0 || key.length() > MAX_SIZE)
 		return KVDB_INVALID_KEY;
 
 	fstream& f = handler->get_db_file();
 	f.seekg(0, ios::beg);	//locate the pointer to the begin of file
 
 	uint32_t keyl, valuel;
-	string _key, _value = "";
+	string _key;
+	value.clear(); //initialize the value
 	
 	while (f.peek() != EOF)
 	{
 		f.read(reinterpret_cast<char*>(&keyl), sizeof(uint32_t));
 		f.read(reinterpret_cast<char*>(&valuel), sizeof(uint32_t));
+
+		char* tmp = new char[keyl+1];
 		f.read(tmp, keyl * sizeof(char));
+		tmp[keyl] = '\0';
 		_key = tmp;
-		_key = _key.substr(0, keyl);
+		delete[]tmp;
 		
 		if (_key == key)	//if found
 		{
 			//skip deleted pair
 			if (valuel == 0)
 			{
-				_value = ""; //update the value to none
+				value.clear(); //update the value to none
 				continue;
 			}
 
 			//set value
-			f.read(tmp, valuel * sizeof(char));
-			_value = tmp;
-			_value = _value.substr(0, valuel);
+			value.resize(valuel);
+			f.read(&value[0], valuel * sizeof(char));
 		}
 		else if(valuel != 0)
 			f.seekg(valuel, ios::cur);	//skip value
 	}
 
-	if (!_value.empty())
-	{
-		value = _value;
+	if (!value.empty())
 		return KVDB_OK;
-	}
 	return KVDB_INVALID_KEY;
 }
 
 int kvdb::del(KVDBHandler* handler, const std::string& key)
 {
-	if (key.length() == 0)
+	if (key.length() == 0 || key.length() > MAX_SIZE)
 		return KVDB_INVALID_KEY;
 
 	fstream& f = handler->get_db_file();
@@ -122,9 +122,12 @@ int kvdb::del(KVDBHandler* handler, const std::string& key)
 	{
 		f.read(reinterpret_cast<char*>(&keyl), sizeof(uint32_t));
 		f.read(reinterpret_cast<char*>(&valuel), sizeof(uint32_t));
+
+		char* tmp = new char[keyl + 1];
 		f.read(tmp, keyl * sizeof(char));
+		tmp[keyl] = '\0';
 		_key = tmp;
-		_key = _key.substr(0, keyl);
+		delete[]tmp;
 
 		if (_key == key)	//if found
 		{
@@ -136,8 +139,8 @@ int kvdb::del(KVDBHandler* handler, const std::string& key)
 			}
 			
 			FOUND = 1;
-
 		}
+
 		f.seekg(valuel, ios::cur);	//skip value
 	}
 
