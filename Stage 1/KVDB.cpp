@@ -2,7 +2,6 @@
 #include <fstream>
 #include <stdint.h>
 #include "KVDB.h"
-#define MAX_SIZE 10000
 using namespace kvdb;
 using namespace std;
 
