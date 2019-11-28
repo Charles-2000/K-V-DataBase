@@ -18,8 +18,9 @@ namespace kvdb {
     const int KVDB_INVALID_KEY = 2;
     // No space on devices for purging.
     const int KVDB_NO_SPACE_LEFT_ON_DEVICES = 3;
-    // ...
-    
+    // The max size of key
+    const int MAX_SIZE = 10000;
+
     // File Handler for KV-DB
     class KVDBHandler {
 	private:
