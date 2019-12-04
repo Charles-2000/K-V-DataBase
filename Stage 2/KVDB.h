@@ -30,16 +30,16 @@ namespace kvdb {
 		std::string file_path;
 		std::fstream file; 	
 
-    public:
-
 		//Records the offset of keys.
 		std::unordered_map<std::string, int> AOF_index;
+
+    public:
 
 		//create AOF_index
 		int createAOFIndex();
 
 		//get AOF_index
-		//std::unordered_map<string, int> getAOFIndex();
+		std::unordered_map<std::string, int>* getAOFIndex();
 
 		//set key-offset 
 		void setOffset(const std::string key, const int offset);
@@ -58,7 +58,13 @@ namespace kvdb {
 		std::string getFilePath();
 
 		//get the file of database.
-		std::fstream& get_db_file();
+		std::fstream* get_db_file();
+
+		//open AOF
+		void openFile();
+
+		//close AOF
+		void closeFile();
 
         // Closes DB handler
         ~KVDBHandler();
