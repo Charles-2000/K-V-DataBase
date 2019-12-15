@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <queue>
 #include <unordered_map>
 
 namespace kvdb {
@@ -22,16 +23,46 @@ namespace kvdb {
     // The max size of key
 	const int MAX_SIZE = 10000;
 
-	
+	// delete the key
+	const int KVDB_VL_DELETE = 0;
+	// is a timestamp
+	const int KVDB_VL_EXPIRES = -1;
 
-    // File Handler for KV-DB
+	//struct of key's time stamp
+	struct TimeStamp
+	{
+		std::string key;
+		unsigned int time;
+
+		//if not exists expire time, initialize as 0
+		TimeStamp(){}
+		TimeStamp(std::string _key) :key(_key) { time = 0; }
+		TimeStamp(std::string _key, unsigned int _time) :key(_key), time(_time) {}
+		friend bool operator > (const TimeStamp& t1, const TimeStamp& t2);
+	};
+
+	//the value of AOF_index
+	struct Index
+	{
+		int offset;
+		unsigned int time;
+
+		Index(){}
+		Index(int _offset) :offset(_offset) { time = 0; }
+		Index(int _offset, unsigned int _time) :offset(_offset), time(_time) {}
+	};
+
+    // File Handler for KVDB
     class KVDBHandler {
 	private:
 		std::string file_path;
 		std::fstream file; 	
 
 		//Records the offset of keys.
-		std::unordered_map<std::string, int> AOF_index;
+		std::unordered_map<std::string, Index> AOF_index;
+
+		//Record each key's time stamp
+		std::priority_queue<TimeStamp, std::vector<TimeStamp>, std::greater<TimeStamp> > AOF_time;
 
     public:
 
@@ -39,30 +70,32 @@ namespace kvdb {
 		int createAOFIndex();
 
 		//get AOF_index
-		std::unordered_map<std::string, int>* getAOFIndex();
+		std::unordered_map<std::string, Index>* getAOFIndex();
 
 		//set key-offset 
-		void setOffset(const std::string key, const int offset);
-
+		void setOffset(const std::string key, int pos);
 		//get the offset of key
 		int getOffset(const std::string key);
+		//delete key-Index pair
+		void deleteIndex(const std::string key);
 
-		//delete key-offset pair
-		void deleteOffset(const std::string key);
+		//set expired time
+		void setExpiredTime(const std::string& key, int time);
+
+		//delete expired keys
+		void update();
 
         // Constructor, creates DB handler
         // @param db_file {const std::string&} path of the append-only file for database.
         KVDBHandler(const std::string& db_file);
 
 		//get the path of database.
-		std::string getFilePath();
-
+		const std::string getFilePath();
 		//get the file of database.
 		std::fstream* get_db_file();
 
 		//open AOF
 		void openFile();
-
 		//close AOF
 		void closeFile();
 
@@ -102,7 +135,7 @@ namespace kvdb {
     // @return {int} return code
     int expires(KVDBHandler* handler, const std::string& key, int n);
 
-    // Set a member from a Set or SortedSet 's time to live in seconds
+    // Set a member from a Set or SortedSet's time to live in seconds
     // @param handler {KVDBHandler*} the handler of KVDB
     // @param key {const std::string&} the key
     // @param n {int} life cycle in seconds
