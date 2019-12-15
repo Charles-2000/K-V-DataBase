@@ -1,10 +1,17 @@
 #include <iostream>
 #include <fstream>
 #include <stdint.h>
+#include <time.h>
 #include <unordered_map>
 #include "KVDB.h"
 using namespace kvdb;
 using namespace std;
+
+//overload operator '>' to create min-heap
+inline bool kvdb::operator>(const TimeStamp& t1, const TimeStamp& t2)
+{
+	return t1.time > t2.time;
+}
 
 
 KVDBHandler::KVDBHandler(const std::string& db_file)
@@ -31,7 +38,7 @@ KVDBHandler::~KVDBHandler()
 	this->AOF_index.clear();
 }
 
-string KVDBHandler::getFilePath()
+const string KVDBHandler::getFilePath()
 {
 	return file_path;
 }
@@ -58,29 +65,33 @@ int KVDBHandler::createAOFIndex()
 	fstream* f = this->get_db_file();
 	f->seekg(0, ios::beg);
 
-	uint32_t keyl, valuel;
-	string _key;
+	int keyl, valuel;
+	string key;
 
 	while (f->peek() != EOF)
 	{
 		int pos = f->tellg();  //records the offset of a new K-V pair
 
-		f->read(reinterpret_cast<char*>(&keyl), sizeof(uint32_t));
-		f->read(reinterpret_cast<char*>(&valuel), sizeof(uint32_t));
+		f->read(reinterpret_cast<char*>(&keyl), sizeof(int));
+		f->read(reinterpret_cast<char*>(&valuel), sizeof(int));
 
-		char* tmp = new char[keyl + 1];
-		f->read(tmp, keyl * sizeof(char));
-		tmp[keyl] = '\0';
-		_key = tmp;
-		delete[]tmp;
+		key.resize(keyl);
+		f->read(&key[0], keyl * sizeof(char));
 
-		//if value exists, update position; else delete key
-		if (valuel != 0)
-			this->AOF_index[_key] = pos;
-		else
-			this->AOF_index.erase(_key);
-
-		f->seekg(valuel, ios::cur);  //skips value
+		if (valuel > 0) //if value exists, update index
+		{
+			Index index(pos);
+			this->AOF_index[key] = index;
+			f->seekg(valuel, ios::cur);  //skips value
+		}
+		else if (valuel == KVDB_VL_DELETE)
+			this->AOF_index.erase(key);
+		else if (valuel == KVDB_VL_EXPIRES)
+		{
+			unsigned int time;
+			f->read(reinterpret_cast<char*>(&time), sizeof(unsigned int));
+			this->setExpiredTime(key, time);
+		}	
 	}
 
 	/*//for test
@@ -91,27 +102,63 @@ int KVDBHandler::createAOFIndex()
 	return KVDB_OK;
 }
 
-unordered_map<string, int>* KVDBHandler::getAOFIndex()
+unordered_map<string, Index>* KVDBHandler::getAOFIndex()
 {
 	return &this->AOF_index;
 }
 
-void KVDBHandler::setOffset(const std::string key, const int offset)
+void KVDBHandler::setOffset(const std::string key, int pos)
 {
-	this->AOF_index[key] = offset;
+	this->AOF_index[key] = Index(pos);
 }
 
 int KVDBHandler::getOffset(const std::string key)
 {
-	unordered_map<string, int>::iterator it = this->AOF_index.find(key);
+	unordered_map<string, Index>::iterator it = this->AOF_index.find(key);
 	if (it != this->AOF_index.end())
-		return it->second;
+	{
+		//cout << "End:  " << it->second.time << endl;
+		return it->second.offset;
+	}
+		
 	return -1;
 }
 
-void KVDBHandler::deleteOffset(const std::string key)
+void KVDBHandler::deleteIndex(const std::string key)
 {
 	this->AOF_index.erase(key);
+}
+
+void kvdb::KVDBHandler::setExpiredTime(const std::string& key, int time)
+{
+	int pos = this->getOffset(key);
+	AOF_index[key] = Index(pos, time);
+	AOF_time.push(TimeStamp(key, time));
+}
+
+void kvdb::KVDBHandler::update()
+{
+	time_t curTime;
+	unsigned int curtime, endtime;
+	TimeStamp t;
+	
+	while (!this->AOF_time.empty()) 
+	{
+		curTime = time(NULL);
+		curtime = curTime;
+		t = this->AOF_time.top();
+
+		if (t.time != 0 && t.time <= curtime) //if already expired
+		{
+			this->AOF_time.pop();
+
+			endtime = this->AOF_index[t.key].time;
+			if (endtime != 0 && endtime < curtime) //if already expired
+				del(this, t.key);
+		}
+		else
+			break;	
+	}
 }
 
 int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& value)
@@ -124,13 +171,13 @@ int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& v
 	int pos = f->tellg();  //records current position
 	
 	//set data messages
-	uint32_t key_length = key.length();
-	uint32_t value_length = value.length();
+	int key_length = key.length();
+	int value_length = value.length();
 	string _key = key;
 	string _value = value;
 
-	f->write(reinterpret_cast<char*>(&key_length), sizeof(uint32_t));
-	f->write(reinterpret_cast<char*>(&value_length), sizeof(uint32_t));
+	f->write(reinterpret_cast<char*>(&key_length), sizeof(int));
+	f->write(reinterpret_cast<char*>(&value_length), sizeof(int));
 	f->write(_key.c_str(), key_length * sizeof(char));
 	f->write(_value.c_str(), value_length * sizeof(char));
 
@@ -141,6 +188,8 @@ int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& v
 
 int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
 {
+	handler->update();
+
 	if (key.length() == 0 || key.length() > MAX_SIZE)
 		return KVDB_INVALID_KEY;
 
@@ -151,10 +200,10 @@ int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
 	fstream* f = handler->get_db_file();
 	f->seekg(pos, ios::beg);	//locate the pointer to the begin of file
 
-	uint32_t keyl, valuel;
+	int keyl, valuel;
 	
-	f->read(reinterpret_cast<char*>(&keyl), sizeof(uint32_t));
-	f->read(reinterpret_cast<char*>(&valuel), sizeof(uint32_t));
+	f->read(reinterpret_cast<char*>(&keyl), sizeof(int));
+	f->read(reinterpret_cast<char*>(&valuel), sizeof(int));
 
 	f->seekg(keyl, ios::cur);
 
@@ -175,16 +224,16 @@ int kvdb::del(KVDBHandler* handler, const std::string& key)
 		return KVDB_INVALID_KEY;
 
 	//If key exists, set data messages.
-	uint32_t key_length = key.length();
-	uint32_t value_length = 0;
+	int key_length = key.length();
+	int value_length = KVDB_VL_DELETE;
 
 	fstream* f = handler->get_db_file();
 	f->seekg(0, ios::end);
-	f->write(reinterpret_cast<char*>(&key_length), sizeof(uint32_t));
-	f->write(reinterpret_cast<char*>(&value_length), sizeof(uint32_t));
+	f->write(reinterpret_cast<char*>(&key_length), sizeof(int));
+	f->write(reinterpret_cast<char*>(&value_length), sizeof(int));
 	f->write(key.c_str(), key_length * sizeof(char));
 
-	handler->deleteOffset(key);
+	handler->deleteIndex(key);
 
 	return KVDB_OK;
 }
@@ -202,9 +251,9 @@ int kvdb::purge(KVDBHandler* handler)
 	fstream* f = handler->get_db_file();
 	kvdb::KVDBHandler tmp_kv(tmp_path);
 
-	unordered_map<string, int>* Index = handler->getAOFIndex();
-	unordered_map<string, int>::iterator it;
-	for (it = Index->begin(); it != Index->end(); it++)
+	unordered_map<string, Index>* index = handler->getAOFIndex();
+	unordered_map<string, Index>::iterator it;
+	for (it = index->begin(); it != index->end(); it++)
 	{
 		string key = it->first;
 		string value;
@@ -222,3 +271,30 @@ int kvdb::purge(KVDBHandler* handler)
 	
 	return KVDB_OK;
 }
+
+int kvdb::expires(KVDBHandler* handler, const std::string& key, int n)
+{
+	if (key.length() == 0 || key.length() > MAX_SIZE)
+		return KVDB_INVALID_KEY;
+
+	fstream* f = handler->get_db_file();
+	f->seekg(0, ios::end);	//locate the pointer to the end of file
+
+	int key_length = key.length();
+	int value_length = KVDB_VL_EXPIRES;
+	string _key = key;
+
+	f->write(reinterpret_cast<char*>(&key_length), sizeof(int));
+	f->write(reinterpret_cast<char*>(&value_length), sizeof(int));
+	f->write(_key.c_str(), key_length * sizeof(char));
+
+	time_t t = time(NULL);  //get current time 
+	unsigned int _time = t;
+	_time += n;
+	f->write(reinterpret_cast<char*>(&_time), sizeof(unsigned int));
+
+	handler->setExpiredTime(key, _time);
+
+	return 0;
+}
+
