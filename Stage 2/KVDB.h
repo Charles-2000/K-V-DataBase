@@ -115,7 +115,7 @@ namespace kvdb {
     // @param key {const std::string&} the key of a string
     // @param value {std::string&} store the value of a key after GET executed correctly
     // @return {int} return code    
-    int get(KVDBHandler* handler, const std::string& key, std::string& value);
+    int get(KVDBHandler* handler, const std::string& key, std::string* value);
 
     // Delete a key
     // @param handler {KVDBHandler*} the handler of KVDB
