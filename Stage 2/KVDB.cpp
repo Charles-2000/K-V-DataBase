@@ -191,7 +191,7 @@ int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& v
 	return KVDB_OK;
 }
 
-int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
+int kvdb::get(KVDBHandler* handler, const std::string& key, std::string* value)
 {
 	handler->update();
 
@@ -213,8 +213,8 @@ int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
 	f->seekg(keyl, ios::cur);
 
 	//set value
-	value.resize(valuel);
-	f->read(&value[0], valuel * sizeof(char));
+	(*value).resize(valuel);
+	f->read(&(*value)[0], valuel * sizeof(char));
 
 	return KVDB_OK;
 }
@@ -251,7 +251,11 @@ int kvdb::purge(KVDBHandler* handler)
 	//determine whether file "tmp" exists
 	fstream tmp_file(tmp_path.c_str(), ios::in);
 	if (!tmp_file.fail())  //if exists, remove file "tmp"
+	{
+		tmp_file.close();
 		remove(tmp_path.c_str());
+	}
+		
 
 	kvdb::KVDBHandler tmp_kv(tmp_path);
 	fstream* f = tmp_kv.get_db_file();
@@ -262,33 +266,33 @@ int kvdb::purge(KVDBHandler* handler)
 	unordered_map<string, Index>::iterator it;
 	for (it = index->begin(); it != index->end(); it++)
 	{
-		string key = it->first;
-		string value;
+		string _key = it->first;
+		string _value;
 		unsigned int _time = it->second.time;
 
-		get(handler, key, value);
-		set(&tmp_kv, key, value);
+		get(handler, _key, &_value);
+		//set(&tmp_kv, key, value);
 
 		if (_time == 0)
 			continue;
 
 		//write expired time
-		int key_length = key.length();
+		/*int key_length = key.length();
 		int value_length = KVDB_VL_EXPIRES;
+		f->seekg(0, ios::end);
 		f->write(reinterpret_cast<char*>(&key_length), sizeof(int));
 		f->write(reinterpret_cast<char*>(&value_length), sizeof(int));
 		f->write(key.c_str(), key_length * sizeof(char));
-		f->write(reinterpret_cast<char*>(&_time), sizeof(unsigned int));
-		/*time_t t = time(NULL);
-		expires(&tmp_kv, key, _time - t);*/
+		f->write(reinterpret_cast<char*>(&_time), sizeof(unsigned int));*/
 	}
 
 	//update the new Append-Only file and delete the old one
 	string oldpath = handler->getFilePath();
+	cout << oldpath << endl;
 	handler->closeFile();
 	tmp_kv.closeFile();
 	remove(oldpath.c_str());
-	rename(tmp_path.c_str(), oldpath.c_str());
+	cout << rename(tmp_path.c_str(), oldpath.c_str()) << endl;
 	
 	return KVDB_OK;
 }
