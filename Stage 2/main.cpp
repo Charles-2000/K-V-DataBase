@@ -58,7 +58,8 @@ int main(int, char**) {
 	kvdb::set(&kv, "key", "value");
 	kvdb::expires(&kv, "key", 5000);
 
-	kvdb::purge(&kv);
+	if(kvdb::purge(&kv) == kvdb::KVDB_OK)
+		std::cout << "Purge OK" << std::endl;
 
 	if (kvdb::KVDB_OK == kvdb::get(&kv, "key", value)) {
 		std::cout << value << std::endl;
