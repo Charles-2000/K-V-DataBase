@@ -53,5 +53,18 @@ int main(int, char**) {
 		std::cout << "Not Found!" << std::endl;
 
 
+	//test 4
+	//test for purge
+	kvdb::set(&kv, "key", "value");
+	kvdb::expires(&kv, "key", 5000);
+
+	kvdb::purge(&kv);
+
+	if (kvdb::KVDB_OK == kvdb::get(&kv, "key", value)) {
+		std::cout << value << std::endl;
+	}else
+		std::cout << "Not Found!" << std::endl;
+
+
 	return 0;
 }
