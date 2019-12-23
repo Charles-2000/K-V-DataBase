@@ -19,7 +19,7 @@ KVDBHandler::KVDBHandler(const std::string& db_file)
 	file.open(db_file.c_str(), ios::out | ios::binary | ios::app); //If file doesn't exist, create file.
 	if (file.fail())  //if fail, throws exception and exits program
 	{
-		throw "Create file \"" + db_file + "There's no space left on devices!";
+		throw "Create file \"" + db_file + "\"\nThere's no space left on devices!";
 		exit(KVDB_NO_SPACE_LEFT_ON_DEVICES);
 	}	
 	else
@@ -253,8 +253,10 @@ int kvdb::purge(KVDBHandler* handler)
 	if (!tmp_file.fail())  //if exists, remove file "tmp"
 		remove(tmp_path.c_str());
 
-	fstream* f = handler->get_db_file();
 	kvdb::KVDBHandler tmp_kv(tmp_path);
+	fstream* f = tmp_kv.get_db_file();
+
+	handler->update();
 
 	unordered_map<string, Index>* index = handler->getAOFIndex();
 	unordered_map<string, Index>::iterator it;
@@ -262,11 +264,23 @@ int kvdb::purge(KVDBHandler* handler)
 	{
 		string key = it->first;
 		string value;
-
+		unsigned int _time = it->second.time;
 
 		get(handler, key, value);
 		set(&tmp_kv, key, value);
 
+		if (_time == 0)
+			continue;
+
+		//write expired time
+		int key_length = key.length();
+		int value_length = KVDB_VL_EXPIRES;
+		f->write(reinterpret_cast<char*>(&key_length), sizeof(int));
+		f->write(reinterpret_cast<char*>(&value_length), sizeof(int));
+		f->write(key.c_str(), key_length * sizeof(char));
+		f->write(reinterpret_cast<char*>(&_time), sizeof(unsigned int));
+		/*time_t t = time(NULL);
+		expires(&tmp_kv, key, _time - t);*/
 	}
 
 	//update the new Append-Only file and delete the old one
