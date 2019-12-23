@@ -152,6 +152,11 @@ void kvdb::KVDBHandler::update()
 		{
 			this->AOF_time.pop();
 
+			int pos = this->getOffset(t.key);
+			if (pos == -1)  //key doesn't exist
+				continue;
+
+			// if t.key exists
 			endtime = this->AOF_index[t.key].time;
 			if (endtime != 0 && endtime < curtime) //if already expired
 				del(this, t.key);
@@ -258,8 +263,10 @@ int kvdb::purge(KVDBHandler* handler)
 		string key = it->first;
 		string value;
 
+
 		get(handler, key, value);
 		set(&tmp_kv, key, value);
+
 	}
 
 	//update the new Append-Only file and delete the old one
@@ -275,6 +282,10 @@ int kvdb::purge(KVDBHandler* handler)
 int kvdb::expires(KVDBHandler* handler, const std::string& key, int n)
 {
 	if (key.length() == 0 || key.length() > MAX_SIZE)
+		return KVDB_INVALID_KEY;
+
+	int pos = handler->getOffset(key);
+	if (pos == -1)  //key doesn't exist
 		return KVDB_INVALID_KEY;
 
 	fstream* f = handler->get_db_file();
