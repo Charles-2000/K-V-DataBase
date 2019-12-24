@@ -50,8 +50,8 @@ fstream* KVDBHandler::get_db_file()
 
 void KVDBHandler::openFile()
 {
-	if(!file)
-		file.open(file_path.c_str(), ios::binary | ios::in | ios::out | ios::app);
+	file.open(file_path.c_str(), ios::binary | ios::in | ios::out | ios::app);
+	this->createAOFIndex();
 }
 
 void KVDBHandler::closeFile()
@@ -62,6 +62,11 @@ void KVDBHandler::closeFile()
 
 int KVDBHandler::createAOFIndex()
 {
+	if (!this->AOF_index.empty())
+		this->AOF_index.clear();
+	while (!this->AOF_time.empty())
+		this->AOF_time.pop();
+
 	fstream* f = this->get_db_file();
 	f->seekg(0, ios::beg);
 
@@ -132,6 +137,8 @@ void KVDBHandler::deleteIndex(const std::string key)
 void kvdb::KVDBHandler::setExpiredTime(const std::string& key, int time)
 {
 	int pos = this->getOffset(key);
+	if (pos == -1)
+		return;
 	AOF_index[key] = Index(pos, time);
 	AOF_time.push(TimeStamp(key, time));
 }
@@ -148,9 +155,12 @@ void kvdb::KVDBHandler::update()
 		curtime = curTime;
 		t = this->AOF_time.top();
 
-		if (t.time != 0 && t.time <= curtime) //if already expired
+		if (t.time <= curtime) //if already expired
 		{
 			this->AOF_time.pop();
+
+			if (t.time == 0)
+				continue;
 
 			int pos = this->getOffset(t.key);
 			if (pos == -1)  //key doesn't exist
@@ -159,7 +169,7 @@ void kvdb::KVDBHandler::update()
 			// if t.key exists
 			endtime = this->AOF_index[t.key].time;
 			if (endtime != 0 && endtime < curtime) //if already expired
-				del(this, t.key);
+				this->deleteIndex(t.key);
 		}
 		else
 			break;	
@@ -174,7 +184,7 @@ int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& v
 	fstream* f = handler->get_db_file();
 	f->seekg(0, ios::end);	//locate the pointer to the end of file
 	int pos = f->tellg();  //records current position
-	
+
 	//set data messages
 	int key_length = key.length();
 	int value_length = value.length();
@@ -193,10 +203,10 @@ int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& v
 
 int kvdb::get(KVDBHandler* handler, const std::string& key, std::string* value)
 {
-	handler->update();
-
 	if (key.length() == 0 || key.length() > MAX_SIZE)
 		return KVDB_INVALID_KEY;
+
+	handler->update();
 
 	int pos = handler->getOffset(key);
 	if(pos == -1)  //key doesn't exist
@@ -209,10 +219,11 @@ int kvdb::get(KVDBHandler* handler, const std::string& key, std::string* value)
 	
 	f->read(reinterpret_cast<char*>(&keyl), sizeof(int));
 	f->read(reinterpret_cast<char*>(&valuel), sizeof(int));
+	//cout << "###" << key << " : " << keyl << " : " << valuel << endl;
 
 	f->seekg(keyl, ios::cur);
 
-	//set value
+	//get value
 	(*value).resize(valuel);
 	f->read(&(*value)[0], valuel * sizeof(char));
 
@@ -223,6 +234,8 @@ int kvdb::del(KVDBHandler* handler, const std::string& key)
 {
 	if (key.length() == 0 || key.length() > MAX_SIZE)
 		return KVDB_INVALID_KEY;
+
+	handler->update();
 
 	int pos = handler->getOffset(key);
 	if (pos == -1)  //key doesn't exist
@@ -256,43 +269,41 @@ int kvdb::purge(KVDBHandler* handler)
 		remove(tmp_path.c_str());
 	}
 		
-
 	kvdb::KVDBHandler tmp_kv(tmp_path);
 	fstream* f = tmp_kv.get_db_file();
-
-	handler->update();
 
 	unordered_map<string, Index>* index = handler->getAOFIndex();
 	unordered_map<string, Index>::iterator it;
 	for (it = index->begin(); it != index->end(); it++)
 	{
-		string _key = it->first;
-		string _value;
+		string key = it->first;
+		string value;
 		unsigned int _time = it->second.time;
 
-		get(handler, _key, &_value);
-		//set(&tmp_kv, key, value);
+		if (get(handler, key, &value) == KVDB_OK)
+			set(&tmp_kv, key, value);
 
 		if (_time == 0)
 			continue;
 
 		//write expired time
-		/*int key_length = key.length();
+		int key_length = key.length();
 		int value_length = KVDB_VL_EXPIRES;
 		f->seekg(0, ios::end);
 		f->write(reinterpret_cast<char*>(&key_length), sizeof(int));
 		f->write(reinterpret_cast<char*>(&value_length), sizeof(int));
 		f->write(key.c_str(), key_length * sizeof(char));
-		f->write(reinterpret_cast<char*>(&_time), sizeof(unsigned int));*/
+		f->write(reinterpret_cast<char*>(&_time), sizeof(unsigned int));
 	}
 
 	//update the new Append-Only file and delete the old one
 	string oldpath = handler->getFilePath();
-	cout << oldpath << endl;
 	handler->closeFile();
 	tmp_kv.closeFile();
 	remove(oldpath.c_str());
-	cout << rename(tmp_path.c_str(), oldpath.c_str()) << endl;
+	rename(tmp_path.c_str(), oldpath.c_str());
+
+	handler->openFile();
 	
 	return KVDB_OK;
 }
