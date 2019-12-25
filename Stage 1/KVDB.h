@@ -24,7 +24,6 @@ namespace kvdb {
     // File Handler for KV-DB
     class KVDBHandler {
 	private:
-		int RUNTIME_MESSAGE;
 		std::string file_path;
 		std::fstream file; 
     public:
