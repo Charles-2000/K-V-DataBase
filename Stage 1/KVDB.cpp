@@ -9,10 +9,10 @@ using namespace std;
 KVDBHandler::KVDBHandler(const std::string& db_file)
 {
 	file.open(db_file.c_str(), ios::out | ios::binary | ios::app); //If file doesn't exist, create file.
-	RUNTIME_MESSAGE = KVDB_OK;
-	if (file.fail())
+	if (this->file.fail())  //if fail, throws exception and exits program
 	{
-		RUNTIME_MESSAGE = KVDB_INVALID_AOF_PATH;
+		throw "Create file \"" + db_file + "\" error.\nThere's no space left on devices!";
+		exit(KVDB_NO_SPACE_LEFT_ON_DEVICES);
 	}
 	else
 	{
@@ -70,7 +70,6 @@ int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
 
 	uint32_t keyl, valuel;
 	string _key;
-	value.clear(); //initialize the value
 	
 	while (f.peek() != EOF)
 	{
