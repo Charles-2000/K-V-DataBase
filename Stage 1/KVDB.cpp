@@ -1,6 +1,5 @@
 #include <iostream>
 #include <fstream>
-#include <stdint.h>
 #include "KVDB.h"
 using namespace kvdb;
 using namespace std;
@@ -42,18 +41,18 @@ int kvdb::set(KVDBHandler* handler, const std::string& key, const std::string& v
 {
 	if (key.length() == 0 || key.length() > MAX_SIZE)
 		return KVDB_INVALID_KEY;
-	
-	fstream &f = handler->get_db_file();
+
+	fstream& f = handler->get_db_file();
 	f.seekg(0, ios::end);	//locate the pointer to the end of file
-	
+
 	//set data messages
-	uint32_t key_length = key.length();
-	uint32_t value_length = value.length();
+	int key_length = key.length();
+	int value_length = value.length();
 	string _key = key;
 	string _value = value;
 
-	f.write(reinterpret_cast<char*>(&key_length), sizeof(uint32_t));
-	f.write(reinterpret_cast<char*>(&value_length), sizeof(uint32_t));
+	f.write(reinterpret_cast<char*>(&key_length), sizeof(int));
+	f.write(reinterpret_cast<char*>(&value_length), sizeof(int));
 	f.write(_key.c_str(), key_length * sizeof(char));
 	f.write(_value.c_str(), value_length * sizeof(char));
 
@@ -68,20 +67,17 @@ int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
 	fstream& f = handler->get_db_file();
 	f.seekg(0, ios::beg);	//locate the pointer to the begin of file
 
-	uint32_t keyl, valuel;
+	int keyl, valuel;
 	string _key;
-	
+
 	while (f.peek() != EOF)
 	{
-		f.read(reinterpret_cast<char*>(&keyl), sizeof(uint32_t));
-		f.read(reinterpret_cast<char*>(&valuel), sizeof(uint32_t));
+		f.read(reinterpret_cast<char*>(&keyl), sizeof(int));
+		f.read(reinterpret_cast<char*>(&valuel), sizeof(int));
 
-		char* tmp = new char[keyl+1];
-		f.read(tmp, keyl * sizeof(char));
-		tmp[keyl] = '\0';
-		_key = tmp;
-		delete[]tmp;
-		
+		_key.resize(keyl);
+		f.read(&_key[0], keyl * sizeof(char));
+
 		if (_key == key)	//if found
 		{
 			//skip deleted pair
@@ -95,7 +91,7 @@ int kvdb::get(KVDBHandler* handler, const std::string& key, std::string& value)
 			value.resize(valuel);
 			f.read(&value[0], valuel * sizeof(char));
 		}
-		else if(valuel != 0)
+		else if (valuel != 0)
 			f.seekg(valuel, ios::cur);	//skip value
 	}
 
@@ -112,20 +108,17 @@ int kvdb::del(KVDBHandler* handler, const std::string& key)
 	fstream& f = handler->get_db_file();
 	f.seekg(0, ios::beg);	//locate the pointer to the end of file
 
-	uint32_t keyl, valuel;
+	int keyl, valuel;
 	string _key;
 	int FOUND = 0;
 
 	while (f.peek() != EOF)
 	{
-		f.read(reinterpret_cast<char*>(&keyl), sizeof(uint32_t));
-		f.read(reinterpret_cast<char*>(&valuel), sizeof(uint32_t));
+		f.read(reinterpret_cast<char*>(&keyl), sizeof(int));
+		f.read(reinterpret_cast<char*>(&valuel), sizeof(int));
 
-		char* tmp = new char[keyl + 1];
-		f.read(tmp, keyl * sizeof(char));
-		tmp[keyl] = '\0';
-		_key = tmp;
-		delete[]tmp;
+		_key.resize(keyl);
+		f.read(&_key[0], keyl * sizeof(char));
 
 		if (_key == key)	//if found
 		{
@@ -135,7 +128,7 @@ int kvdb::del(KVDBHandler* handler, const std::string& key)
 				FOUND = 0;
 				continue;
 			}
-			
+
 			FOUND = 1;
 		}
 
@@ -146,13 +139,13 @@ int kvdb::del(KVDBHandler* handler, const std::string& key)
 		return KVDB_INVALID_KEY;
 
 	//If found, set data messages.
-	uint32_t key_length = key.length();
-	uint32_t value_length = 0;
+	int key_length = key.length();
+	int value_length = 0;
 	_key = key;
 
 	f.seekg(0, ios::end);
-	f.write(reinterpret_cast<char*>(&key_length), sizeof(uint32_t));
-	f.write(reinterpret_cast<char*>(&value_length), sizeof(uint32_t));
+	f.write(reinterpret_cast<char*>(&key_length), sizeof(int));
+	f.write(reinterpret_cast<char*>(&value_length), sizeof(int));
 	f.write(_key.c_str(), key_length * sizeof(char));
 
 	return KVDB_OK;
